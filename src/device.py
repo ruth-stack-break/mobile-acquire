@@ -20,21 +20,46 @@ class AndroidDevice:
 
     def connect(self):
         """
-        Connect to Android device using RSA auth.
+        Connect to Android device
+        with retry logic.
         """
 
-        key_path = Path.home() / ".android" / "adbkey"
+        import time
 
-        signer = PythonRSASigner.FromRSAKeyPath(
-            str(key_path)
+        key_path = (
+            Path.home()
+            / ".android"
+            / "adbkey"
         )
 
-        self.device = AdbDeviceUsb()
+        signer = (
+            PythonRSASigner
+            .FromRSAKeyPath(
+                str(key_path)
+            )
+        )
 
-        self.device.connect(
-        rsa_keys=[signer],
-        auth_timeout_s=30
-)
+        attempts = 3
+
+        for attempt in range(attempts):
+
+            try:
+
+                self.device = AdbDeviceUsb()
+
+                self.device.connect(
+                    rsa_keys=[signer],
+                    auth_timeout_s=30
+                )
+
+                return
+
+            except Exception:
+
+                if attempt == attempts - 1:
+                    raise
+
+                time.sleep(3)
 
     def shell(self, command):
         """
@@ -45,7 +70,7 @@ class AndroidDevice:
 
     def get_metadata(self):
         """
-        Get device metadata.
+        Extract device metadata.
         """
 
         return {
@@ -63,5 +88,21 @@ class AndroidDevice:
 
             "serial": self.shell(
                 "getprop ro.serialno"
+            ).strip(),
+
+            "device_name": self.shell(
+                "getprop ro.product.device"
+            ).strip(),
+
+            "brand": self.shell(
+                "getprop ro.product.brand"
+            ).strip(),
+
+            "sdk_version": self.shell(
+                "getprop ro.build.version.sdk"
+            ).strip(),
+
+            "device_time": self.shell(
+                "date"
             ).strip()
         }

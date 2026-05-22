@@ -1,7 +1,11 @@
 venv/
 __pycache__/
 *.pyc
+
 output/
-evidence_*/
-.idea/
+*.log
+
 .vscode/
+.idea/
+
+.DS_Store

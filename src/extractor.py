@@ -1,67 +1,184 @@
 """
-device.py
+extractor.py
 
-Android device connection and metadata extraction
-using adb-shell.
+Android artefact extraction.
 """
 
+import json
 from pathlib import Path
-from adb_shell.adb_device import AdbDeviceUsb
-from adb_shell.auth.sign_pythonrsa import PythonRSASigner
 
 
-class AndroidDevice:
+class AndroidExtractor:
     """
-    Handles Android device communication.
+    Handles artefact extraction.
     """
 
-    def __init__(self):
-        self.device = None
+    def __init__(
+        self,
+        device,
+        logger
+    ):
+        self.device = device
+        self.logger = logger
 
-    def connect(self):
+    def extract_installed_apps(
+        self,
+        output_dir
+    ):
         """
-        Connect to Android device using RSA auth.
+        Extract installed apps.
         """
 
-        key_path = Path.home() / ".android" / "adbkey"
-
-        signer = PythonRSASigner.FromRSAKeyPath(
-            str(key_path)
+        self.logger.info(
+            "Extracting installed apps"
         )
 
-        self.device = AdbDeviceUsb()
+        output_dir = Path(output_dir)
 
-        self.device.connect(
-        rsa_keys=[signer],
-        auth_timeout_s=30
-)
+        apps_output = (
+            output_dir /
+            "installed_apps.json"
+        )
 
-    def shell(self, command):
+        packages = self.device.shell(
+            "pm list packages -f"
+        )
+
+        app_list = []
+
+        for line in packages.splitlines():
+
+            if "=" in line:
+                path_part, package = (
+                    line.replace(
+                        "package:",
+                        ""
+                    ).rsplit("=", 1)
+                )
+
+                app_list.append(
+                    {
+                        "package":
+                        package.strip(),
+
+                        "apk_path":
+                        path_part.strip()
+                    }
+                )
+
+        with open(
+            apps_output,
+            "w",
+            encoding="utf-8"
+        ) as file:
+            json.dump(
+                app_list,
+                file,
+                indent=4
+            )
+
+        self.logger.info(
+            "installed_apps.json created"
+        )
+
+        return apps_output
+
+    def extract_media_metadata(
+        self,
+        output_dir
+    ):
         """
-        Execute shell command.
+        Extract /sdcard metadata.
         """
 
-        return self.device.shell(command)
+        self.logger.info(
+            "Extracting media metadata"
+        )
 
-    def get_metadata(self):
-        """
-        Get device metadata.
-        """
+        output_dir = Path(output_dir)
 
-        return {
-            "model": self.shell(
-                "getprop ro.product.model"
-            ).strip(),
+        metadata_output = (
+            output_dir /
+            "media_metadata.json"
+        )
 
-            "manufacturer": self.shell(
-                "getprop ro.product.manufacturer"
-            ).strip(),
+        command = (
+            "ls -lR /storage/emulated/0 | head -300"
+        )
 
-            "android_version": self.shell(
-                "getprop ro.build.version.release"
-            ).strip(),
+        result = self.device.shell(
+            command
+        )
 
-            "serial": self.shell(
-                "getprop ro.serialno"
-            ).strip()
-        }
+        file_list = []
+
+        current_dir = ""
+
+        for line in result.splitlines():
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.endswith(":"):
+
+                current_dir = (
+                    line[:-1]
+                )
+
+                continue
+
+            if (
+                line.startswith("-")
+                and current_dir
+            ):
+
+                parts = (
+                    line.split()
+                )
+
+                if len(parts) >= 6:
+
+                    size = parts[4]
+
+                    filename = (
+                        " ".join(
+                            parts[7:]
+                        )
+                    )
+
+                    path = (
+                        f"{current_dir}/{filename}"
+                    )
+
+                    modified = (
+                        " ".join(
+                            parts[5:7]
+                        )
+                    )
+
+                    file_list.append(
+                        {
+                            "path": path,
+                            "size": size,
+                            "modified": modified
+                        }
+                    )
+
+        with open(
+            metadata_output,
+            "w",
+            encoding="utf-8"
+        ) as file:
+            json.dump(
+                file_list,
+                file,
+                indent=4
+            )
+
+        self.logger.info(
+            "media_metadata.json created"
+        )
+
+        return metadata_output
