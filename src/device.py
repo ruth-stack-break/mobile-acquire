@@ -6,7 +6,7 @@ using adb-shell.
 """
 
 from pathlib import Path
-from adb_shell.adb_device import AdbDeviceUsb
+from adb_shell.adb_device import AdbDeviceTcp, AdbDeviceUsb
 from adb_shell.auth.sign_pythonrsa import PythonRSASigner
 
 
@@ -18,10 +18,9 @@ class AndroidDevice:
     def __init__(self):
         self.device = None
 
-    def connect(self):
+    def connect(self, platform=None):
         """
-        Connect to Android device
-        with retry logic.
+        Connect to Android device/emulator with retry logic.
         """
 
         import time
@@ -41,25 +40,30 @@ class AndroidDevice:
 
         attempts = 3
 
+        if platform == "emulator":
+            modes = ["tcp"]
+        elif platform == "device":
+            modes = ["usb"]
+        else:
+            modes = ["tcp", "usb"]
+
         for attempt in range(attempts):
+            for mode in modes:
+                try:
+                    if mode == "tcp":
+                        self.device = AdbDeviceTcp("127.0.0.1", 5555)
+                    else:
+                        self.device = AdbDeviceUsb()
 
-            try:
-
-                self.device = AdbDeviceUsb()
-
-                self.device.connect(
-                    rsa_keys=[signer],
-                    auth_timeout_s=30
-                )
-
-                return
-
-            except Exception:
-
-                if attempt == attempts - 1:
-                    raise
-
-                time.sleep(3)
+                    self.device.connect(
+                        rsa_keys=[signer],
+                        auth_timeout_s=30
+                    )
+                    return
+                except Exception as e:
+                    if attempt == attempts - 1 and mode == modes[-1]:
+                        raise e
+            time.sleep(3)
 
     def shell(self, command):
         """
